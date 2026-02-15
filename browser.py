@@ -20,7 +20,10 @@ class URL:
             self.host, port = self.host.split(":", 1)
             self.port = int(port)
 
-    def request(self):
+    def request(self, headers=None):
+        if headers is None:
+            headers = {}
+
         s = socket.socket(
             family=socket.AF_INET,
             type=socket.SOCK_STREAM,
@@ -32,8 +35,18 @@ class URL:
             ctx = ssl.create_default_context()
             s = ctx.wrap_socket(s, server_hostname=self.host)
 
-        request = "GET {} HTTP/1.0\r\n".format(self.path)
-        request += "Host: {}\r\n".format(self.host)
+        normalized_headers = {
+            "Host": self.host,
+            "Connection": "close",
+            "User-Agent": "CustomBrowser"
+        }
+
+        for header, value in headers.items():
+            normalized_headers[header.title()] = value
+
+        request = "GET {} HTTP/1.1\r\n".format(self.path)
+        for header, value in normalized_headers.items():
+            request += "{}: {}\r\n".format(header, value)
         request += "\r\n"
         s.send(request.encode("utf8"))
 

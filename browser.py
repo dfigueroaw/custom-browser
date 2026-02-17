@@ -4,7 +4,13 @@ import ssl
 class URL:
     def __init__(self, url):
         self.scheme, url = url.split("://", 1)
-        assert self.scheme in ["http", "https"]
+        assert self.scheme in ["http", "https", "file"]
+
+        if self.scheme == "file":
+            self.host = None
+            self.port = None
+            self.path = url
+            return
 
         if "/" not in url:
             url = url + "/"
@@ -20,7 +26,14 @@ class URL:
             self.host, port = self.host.split(":", 1)
             self.port = int(port)
 
+    def __repr__(self):
+        return f"URL(scheme={self.scheme}, host={self.host}, port={self.port}, path={repr(self.path)})"
+
     def request(self, headers=None):
+        if self.scheme == "file":
+            with open(self.path, "r", encoding="utf8") as f:
+                return f.read()
+
         if headers is None:
             headers = {}
 

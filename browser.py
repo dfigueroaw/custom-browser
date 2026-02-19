@@ -1,5 +1,8 @@
 import socket
 import ssl
+import time
+
+CACHE = {}
 
 class RedirectLoopError(Exception):
     pass
@@ -44,6 +47,14 @@ class URL:
         current_url = self
 
         while True:
+            key = (current_url.scheme, current_url.host, current_url.port, current_url.path)
+            if key in CACHE:
+                body, expires = CACHE[key]
+                if time.time() < expires:
+                    return body
+                else:
+                    del CACHE[key]
+
             s = socket.socket(
                 family=socket.AF_INET,
                 type=socket.SOCK_STREAM,
@@ -74,6 +85,7 @@ class URL:
 
             statusline = response.readline()
             version, status, explanation = statusline.split(" ", 2)
+            status = int(status)
 
             response_headers = {}
             while True:
@@ -89,7 +101,7 @@ class URL:
             content = response.read()
             s.close()
 
-            if 300 <= int(status) < 400 and "location" in response_headers:
+            if 300 <= status < 400 and "location" in response_headers:
                 location = response_headers.get("location")
                 redirect_count += 1
                 if redirect_count > 10:
@@ -100,6 +112,12 @@ class URL:
 
                 current_url = URL(location)
                 continue
+
+            if status == 200 and "cache-control" in response_headers:
+                cache_control = response_headers["cache-control"].casefold()
+                if cache_control.startswith("max-age=") and "," not in cache_control:
+                    max_age = int(cache_control.split("=", 1)[1])
+                    CACHE[key] = (content, time.time() + max_age)
 
             return content
 

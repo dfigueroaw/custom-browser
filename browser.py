@@ -167,6 +167,7 @@ class Browser:
         self.text = ""
         self.display_list = []
 
+        self.window.bind("<Up>", self.scrollup)
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Configure>", self.resize)
 
@@ -184,6 +185,10 @@ class Browser:
             if y + VSTEP < self.scroll:
                 continue
             self.canvas.create_text(x, y - self.scroll, text=c)
+
+    def scrollup(self, e):
+        self.scroll = max(self.scroll - SCROLL_STEP, 0)
+        self.draw()
 
     def scrolldown(self, e):
         self.scroll += SCROLL_STEP

@@ -186,6 +186,17 @@ class Browser:
                 continue
             self.canvas.create_text(x, y - self.scroll, text=c)
 
+        page_height = max((y for _, y, _ in self.display_list), default=0)
+
+        if page_height <= HEIGHT:
+            return
+
+        bar_height = HEIGHT * HEIGHT / page_height
+        bar_top = self.scroll * HEIGHT / page_height
+        bar_bottom = bar_top + bar_height
+
+        self.canvas.create_rectangle(WIDTH - 8, bar_top, WIDTH, bar_bottom, width=0, fill='blue')
+
     def scrollup(self, e):
         self.scroll = max(self.scroll - SCROLL_STEP, 0)
         self.draw()

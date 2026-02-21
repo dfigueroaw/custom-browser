@@ -2,8 +2,25 @@ import socket
 import ssl
 import time
 import tkinter
+import os
 
+EMOJI_DIR = None
 CACHE = {}
+EMOJI_CACHE = {}
+
+def setup_emoji():
+    global EMOJI_DIR
+
+    try:
+        from emoji_setup import ensure_emoji_assets
+        EMOJI_DIR = ensure_emoji_assets()
+
+        if EMOJI_DIR is not None and os.path.exists(EMOJI_DIR):
+            for f in os.listdir(EMOJI_DIR):
+                if f.endswith(".png"):
+                    EMOJI_CACHE[f[:-4]] = None
+    except Exception as e:
+        print("Emoji disabled:", e)
 
 class RedirectLoopError(Exception):
     pass
@@ -171,6 +188,8 @@ class Browser:
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Configure>", self.resize)
 
+        setup_emoji()
+
     def load(self, url):
         body = url.request()
         self.text = lex(body)
@@ -184,7 +203,15 @@ class Browser:
                 continue
             if y + VSTEP < self.scroll:
                 continue
-            self.canvas.create_text(x, y - self.scroll, text=c)
+
+            code = format(ord(c), "X")
+            if code in EMOJI_CACHE:
+                if EMOJI_CACHE[code] is None:
+                    path = os.path.join(EMOJI_DIR, code + ".png")
+                    EMOJI_CACHE[code] = tkinter.PhotoImage(file=path)
+                self.canvas.create_image(x, y - self.scroll, image=EMOJI_CACHE[code])
+            else:
+                self.canvas.create_text(x, y - self.scroll, text=c)
 
         page_height = max((y for _, y, _ in self.display_list), default=0)
 

@@ -170,6 +170,7 @@ class Layout:
         self.weight = "normal"
         self.style = "roman"
         self.size = 12
+        self.centering = False
         self.line = []
         for tok in tokens:
             self.token(tok)
@@ -200,6 +201,12 @@ class Layout:
         elif tok.tag == "/p":
             self.flush()
             self.cursor_y += VSTEP
+        elif tok.tag == "h1 class=\"title\"":
+            self.flush()
+            self.centering = True
+        elif tok.tag == "/h1":
+            self.flush()
+            self.centering = False
 
     def word(self, word):
         font = get_font(self.size, self.weight, self.style)
@@ -215,12 +222,16 @@ class Layout:
 
         metrics = [font.metrics() for x, word, font in self.line]
         max_ascent = max([metric["ascent"] for metric in metrics])
-
         baseline = self.cursor_y + 1.25 * max_ascent
+
+        last_x, last_word, last_font = self.line[-1]
+        line_width = last_x + get_measure(last_font, last_word) - HSTEP
+
+        offset = (WIDTH - line_width) / 2 - HSTEP if self.centering else 0
 
         for x, word, font in self.line:
             y = baseline - font.metrics("ascent")
-            self.display_list.append((x, y, word, font))
+            self.display_list.append((x + offset, y, word, font))
 
         max_descent = max([metric["descent"] for metric in metrics])
         self.cursor_y = baseline + 1.25 * max_descent

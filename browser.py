@@ -2,25 +2,11 @@ import socket
 import ssl
 import time
 import tkinter
-import os
+import tkinter.font
 
-EMOJI_DIR = None
 CACHE = {}
-EMOJI_CACHE = {}
-
-def setup_emoji():
-    global EMOJI_DIR
-
-    try:
-        from emoji_setup import ensure_emoji_assets
-        EMOJI_DIR = ensure_emoji_assets()
-
-        if EMOJI_DIR is not None and os.path.exists(EMOJI_DIR):
-            for f in os.listdir(EMOJI_DIR):
-                if f.endswith(".png"):
-                    EMOJI_CACHE[f[:-4]] = None
-    except Exception as e:
-        print("Emoji disabled:", e)
+FONTS = {}
+MEASURES = {}
 
 class RedirectLoopError(Exception):
     pass
@@ -140,35 +126,107 @@ class URL:
             return content
 
 def lex(body):
-    text = ""
+    out = []
+    buffer = ""
     in_tag = False
     for c in body:
         if c == "<":
             in_tag = True
+            if buffer:
+                out.append(Text(buffer))
+            buffer = ""
         elif c == ">":
             in_tag = False
-        elif not in_tag:
-            text += c
-    return text
+            out.append(Tag(buffer))
+            buffer = ""
+        else:
+            buffer += c
+    if not in_tag and buffer:
+        out.append(Text(buffer))
+    return out
 
 WIDTH, HEIGHT = 800, 600
 HSTEP, VSTEP = 13, 18
 SCROLL_STEP = 100
 
-def layout(text):
-    display_list = []
-    cursor_x, cursor_y = HSTEP, VSTEP
-    for c in text:
-        if c == "\n":
-            cursor_y += 2 * VSTEP
-            cursor_x = HSTEP
-            continue
-        display_list.append((cursor_x, cursor_y, c))
-        cursor_x += HSTEP
-        if cursor_x >= WIDTH - HSTEP:
-            cursor_y += VSTEP
-            cursor_x = HSTEP
-    return display_list
+def get_font(size, weight, style):
+    key = (size, weight, style)
+    if key not in FONTS:
+        font = tkinter.font.Font(size=size, weight=weight, slant=style)
+        FONTS[key] = font
+    return FONTS[key]
+
+def get_measure(font, word):
+    key = (id(font), word)
+    if key not in MEASURES:
+        MEASURES[key] = font.measure(word)
+    return MEASURES[key]
+
+class Layout:
+    def __init__(self, tokens):
+        self.display_list = []
+        self.cursor_x = HSTEP
+        self.cursor_y = VSTEP
+        self.weight = "normal"
+        self.style = "roman"
+        self.size = 12
+        self.line = []
+        for tok in tokens:
+            self.token(tok)
+        self.flush()
+
+    def token(self, tok):
+        if isinstance(tok, Text):
+            for word in tok.text.split():
+                self.word(word)
+        elif tok.tag == "i":
+            self.style = "italic"
+        elif tok.tag == "/i":
+            self.style = "roman"
+        elif tok.tag == "b":
+            self.weight = "bold"
+        elif tok.tag == "/b":
+            self.weight = "normal"
+        elif tok.tag == "small":
+            self.size -= 2
+        elif tok.tag == "/small":
+            self.size += 2
+        elif tok.tag == "big":
+            self.size += 4
+        elif tok.tag == "/big":
+            self.size -= 4
+        elif tok.tag == "br":
+            self.flush()
+        elif tok.tag == "/p":
+            self.flush()
+            self.cursor_y += VSTEP
+
+    def word(self, word):
+        font = get_font(self.size, self.weight, self.style)
+        w = get_measure(font, word)
+        if self.cursor_x + w > WIDTH - HSTEP:
+            self.flush()
+        self.line.append((self.cursor_x, word, font))
+        self.cursor_x += w + get_measure(font, " ")
+
+    def flush(self):
+        if not self.line:
+            return
+
+        metrics = [font.metrics() for x, word, font in self.line]
+        max_ascent = max([metric["ascent"] for metric in metrics])
+
+        baseline = self.cursor_y + 1.25 * max_ascent
+
+        for x, word, font in self.line:
+            y = baseline - font.metrics("ascent")
+            self.display_list.append((x, y, word, font))
+
+        max_descent = max([metric["descent"] for metric in metrics])
+        self.cursor_y = baseline + 1.25 * max_descent
+
+        self.cursor_x = HSTEP
+        self.line = []
 
 class Browser:
     def __init__(self):
@@ -181,39 +239,29 @@ class Browser:
         self.canvas.pack(fill="both", expand=True)
 
         self.scroll = 0
-        self.text = ""
+        self.tokens = []
         self.display_list = []
 
         self.window.bind("<Up>", self.scrollup)
         self.window.bind("<Down>", self.scrolldown)
         self.window.bind("<Configure>", self.resize)
 
-        setup_emoji()
-
     def load(self, url):
         body = url.request()
-        self.text = lex(body)
-        self.display_list = layout(self.text)
+        self.tokens = lex(body)
+        self.display_list = Layout(self.tokens).display_list
         self.draw()
 
     def draw(self):
         self.canvas.delete("all")
-        for x, y, c in self.display_list:
+        for x, y, word, font in self.display_list:
             if y > self.scroll + HEIGHT:
                 continue
-            if y + VSTEP < self.scroll:
+            if y + font.metrics("linespace") < self.scroll:
                 continue
+            self.canvas.create_text(x, y - self.scroll, text=word, font=font, anchor="nw")
 
-            code = format(ord(c), "X")
-            if code in EMOJI_CACHE:
-                if EMOJI_CACHE[code] is None:
-                    path = os.path.join(EMOJI_DIR, code + ".png")
-                    EMOJI_CACHE[code] = tkinter.PhotoImage(file=path)
-                self.canvas.create_image(x, y - self.scroll, image=EMOJI_CACHE[code])
-            else:
-                self.canvas.create_text(x, y - self.scroll, text=c)
-
-        page_height = max((y for _, y, _ in self.display_list), default=0)
+        page_height = max((y for _, y, _, _ in self.display_list), default=0)
 
         if page_height <= HEIGHT:
             return
@@ -234,10 +282,26 @@ class Browser:
 
     def resize(self, e):
         global WIDTH, HEIGHT
+        if e.width == WIDTH and e.height == HEIGHT:
+            return
         WIDTH = e.width
         HEIGHT = e.height
-        self.display_list = layout(self.text)
+        self.display_list = Layout(self.tokens).display_list
         self.draw()
+
+class Text:
+    def __init__(self, text):
+        self.text = text
+
+    def __repr__(self):
+        return f"Text('{self.text}')"
+
+class Tag:
+    def __init__(self, tag):
+        self.tag = tag
+
+    def __repr__(self):
+        return f"Tag('{self.tag}')"
 
 def set_parameters(**params):
     global WIDTH, HEIGHT, HSTEP, VSTEP, SCROLL_STEP

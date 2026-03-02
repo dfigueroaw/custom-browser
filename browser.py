@@ -214,13 +214,52 @@ class Layout:
             self.superscript = False
 
     def word(self, word):
+        SOFT = "\u00AD"
+
         size = self.size // 2 if self.superscript else self.size
         font = get_font(size, self.weight, self.style)
-        w = get_measure(font, word)
-        if self.cursor_x + w > WIDTH - HSTEP:
+
+        clean = word.replace(SOFT, "")
+        w = get_measure(font, clean)
+
+        if self.cursor_x + w <= WIDTH - HSTEP:
+            self.line.append((self.cursor_x, word, font, self.superscript))
+            self.cursor_x += w + get_measure(font, " ")
+            return
+
+        if SOFT not in word:
             self.flush()
-        self.line.append((self.cursor_x, word, font, self.superscript))
-        self.cursor_x += w + get_measure(font, " ")
+            self.line.append((self.cursor_x, word, font, self.superscript))
+            self.cursor_x += w + get_measure(font, " ")
+            return
+
+        parts = word.split(SOFT)
+        longest_idx = None
+        current = ""
+
+        for i in range(len(parts) - 1):
+            current += parts[i]
+            if self.cursor_x + get_measure(font, current + "-") <= WIDTH - HSTEP:
+                longest_idx = i
+            else:
+                break
+
+        if longest_idx is not None:
+            prefix = "".join(parts[:longest_idx + 1]) + "-"
+            remainder = SOFT.join(parts[longest_idx + 1:])
+            self.line.append((self.cursor_x, prefix, font, self.superscript))
+            self.flush()
+            self.word(remainder)
+            return
+
+        if self.cursor_x == HSTEP:
+            self.line.append((self.cursor_x, parts[0] + "-", font, self.superscript))
+            self.flush()
+            self.word(SOFT.join(parts[1:]))
+            return
+
+        self.flush()
+        self.word(word)
 
     def flush(self):
         if not self.line:

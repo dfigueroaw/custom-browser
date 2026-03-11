@@ -355,18 +355,31 @@ class HTMLParser:
     def parse(self):
         buffer = ""
         in_tag = False
-        for c in self.body:
-            if c == "<":
+        body_length = len(self.body)
+        i = 0
+        while i < body_length:
+            if i < body_length - 3 and self.body[i:i + 4] == "<!--":
+                if buffer:
+                    self.add_text(buffer)
+                buffer = ""
+                i += 4
+                while i < body_length - 2 and self.body[i:i + 3] != "-->":
+                    i += 1
+                i += 3
+                continue
+            elif self.body[i] == "<":
                 in_tag = True
                 if buffer:
                     self.add_text(buffer)
                 buffer = ""
-            elif c == ">":
+            elif self.body[i] == ">":
                 in_tag = False
                 self.add_tag(buffer)
                 buffer = ""
             else:
-                buffer += c
+                buffer += self.body[i]
+            i += 1
+
         if not in_tag and buffer:
             self.add_text(buffer)
         return self.finish()

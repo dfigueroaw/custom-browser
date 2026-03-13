@@ -367,17 +367,36 @@ class HTMLParser:
                     i += 1
                 i += 3
                 continue
+
             elif self.body[i] == "<":
                 in_tag = True
                 if buffer:
                     self.add_text(buffer)
                 buffer = ""
+
             elif self.body[i] == ">":
                 in_tag = False
+                tag = buffer.strip().casefold()
                 self.add_tag(buffer)
                 buffer = ""
+
+                if tag == "script":
+                    end = self.body.casefold().find("</script>", i + 1)
+                    if end == -1:
+                        script_text = self.body[i + 1:]
+                        i = body_length
+                    else:
+                        script_text = self.body[i + 1:end]
+                        i = end + len("</script>") - 1
+
+                    if script_text:
+                        self.add_text(script_text)
+
+                    self.add_tag("/script")
+
             else:
                 buffer += self.body[i]
+
             i += 1
 
         if not in_tag and buffer:

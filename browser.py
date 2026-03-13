@@ -394,9 +394,31 @@ class HTMLParser:
 
     def add_tag(self, tag):
         tag, attributes = self.get_attributes(tag)
+
         if tag.startswith("!"):
             return
+
+        if tag == "p":
+            for i in range(len(self.unfinished) - 1, -1, -1):
+                if self.unfinished[i].tag == "p":
+                    reopen = []
+                    while len(self.unfinished) > i:
+                        node = self.unfinished.pop()
+                        if node.tag != "p":
+                            reopen.append((node.tag, node.attributes))
+                        parent = self.unfinished[-1]
+                        parent.children.append(node)
+                    parent = self.unfinished[-1]
+                    node = Element("p", attributes, parent)
+                    self.unfinished.append(node)
+                    for tagname, attrs in reversed(reopen):
+                        parent = self.unfinished[-1]
+                        node = Element(tagname, attrs, parent)
+                        self.unfinished.append(node)
+                    return
+
         self.implicit_tags(tag)
+
         if tag.startswith("/"):
             if len(self.unfinished) == 1:
                 return
